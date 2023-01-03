@@ -25,17 +25,42 @@ extern "C" {
 /* libt's notion of now() */
 extern double libt_now(void);
 
+/* all-in-one function with flags
+ * returns:
+ * 0 for timeout added/modified
+ * -EINVAL: wakeuptime is NAN
+ * -EPERM: LIBT_MOD not specified for exisiting timer
+ * -ENOENT: LIBT_ADD not specified and not timer found
+ */
+extern int libt_add_timeoutx(double wakeuptime, void (*fn)(void *), const void *dat, int flags);
+#define LIBT_ADD	(1 << 0) /* allow adding a new timeout */
+#define LIBT_MOD	(1 << 1) /* allow modifying existing */
+#define LIBT_RELATIVE	(1 << 2) /* wakeuptime is relative */
+#define LIBT_REPEAT	(1 << 3) /* see libt_repeat_timeout, implies LIBT_RELATIVE */
+
 /* schedule a timeout @wakeuptime */
-extern void libt_add_timeouta(double wakeuptime, void (*fn)(void *), const void *dat);
+static inline
+void libt_add_timeouta(double wakeuptime, void (*fn)(void *), const void *dat)
+{
+	libt_add_timeoutx(wakeuptime, fn, dat, LIBT_ADD | LIBT_MOD);
+}
 
 /* schedule a relative timeout @timeout seconds in the future */
-extern void libt_add_timeout(double timeout, void (*fn)(void *), const void *dat);
+static inline
+void libt_add_timeout(double timeout, void (*fn)(void *), const void *dat)
+{
+	libt_add_timeoutx(timeout, fn, dat, LIBT_ADD | LIBT_MOD | LIBT_RELATIVE);
+}
 
 /* repeat a previously scheduled timeout, @increment seconds further
  * When no matching scheduled timeout is found, this is identical to
  * libt_add_timeout()
  */
-extern void libt_repeat_timeout(double increment, void (*fn)(void *), const void *dat);
+static inline
+void libt_repeat_timeout(double increment, void (*fn)(void *), const void *dat)
+{
+	libt_add_timeoutx(increment, fn, dat, LIBT_ADD | LIBT_MOD | LIBT_REPEAT);
+}
 
 /* remove a scheduled timeout.
  * Nothing happens when no matching timeout is found

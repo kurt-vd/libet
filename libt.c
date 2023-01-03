@@ -16,6 +16,7 @@
  * You should have received a copy of the GNU Lesser Public License
  * along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,21 +118,16 @@ double libt_now(void)
 #endif
 }
 
-void libt_add_timeout(double timeout, void (*fn)(void *), const void *dat)
-{
-	if (isnan(timeout))
-		return;
-	libt_add_timeouta(timeout+libt_now(), fn, dat);
-}
-
-void libt_add_timeouta(double wakeuptime, void (*fn)(void *), const void *dat)
+int libt_add_timeoutx(double wakeuptime, void (*fn)(void *), const void *dat, int flags)
 {
 	struct timer *t;
 
 	if (isnan(wakeuptime))
-		return;
+		return -EINVAL;
 	t = t_find(fn, dat);
 	if (!t) {
+		if (!(flags & LIBT_ADD))
+			return -ENOENT;
 		t = malloc(sizeof(*t));
 		/* don't test t since I don't know what to do if it was NULL
 		 * So, I just use it, and maybe we segfault, which is the best
@@ -140,33 +136,34 @@ void libt_add_timeouta(double wakeuptime, void (*fn)(void *), const void *dat)
 		memset(t, 0, sizeof(*t));
 		t->fn = fn;
 		t->dat = (void *)dat;
+		if (flags & (LIBT_RELATIVE | LIBT_REPEAT))
+			wakeuptime += libt_now();
+		t->wakeup = wakeuptime;
+
+	} else if (t) {
+		if (!(flags & LIBT_MOD))
+			return -EPERM;
+		if (flags & LIBT_REPEAT) {
+			/* wakeuptime is 'increment' */
+			double now = libt_now();
+			t->wakeup += wakeuptime;
+			if (t->wakeup < now)
+				/* We're scheduling in the past.
+				 * Jump to the future again,
+				 * make 'repeat' fail in maintaining strict timing
+				 * and mimic 'add' behaviour
+				 */
+				t->wakeup = now + wakeuptime;
+
+		} else if (flags & LIBT_RELATIVE) {
+			t->wakeup = wakeuptime + libt_now();
+
+		} else {
+			t->wakeup = wakeuptime;
+		}
 	}
-	t->wakeup = wakeuptime;
 	t_add_sorted(t, &s.timers);
-}
-
-void libt_repeat_timeout(double increment, void (*fn)(void *), const void *dat)
-{
-	struct timer *t;
-
-	if (isnan(increment))
-		return;
-	t = t_find(fn, dat);
-	if (!t)
-		libt_add_timeout(increment, fn, dat);
-	else {
-		double now = libt_now();
-
-		t->wakeup += increment;
-		if (t->wakeup < now)
-			/* We're scheduling in the past.
-			 * Jump to the future again,
-			 * make 'repeat' fail in maintaining strict timing
-			 * and mimic 'add' behaviour
-			 */
-			t->wakeup = now + increment;
-		t_add_sorted(t, &s.timers);
-	}
+	return 0;
 }
 
 void libt_remove_timeout(void (*fn)(void *), const void *dat)
