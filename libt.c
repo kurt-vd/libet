@@ -274,6 +274,9 @@ double libt_timetointerval4(double walltime, double interval, double offset, dou
 {
 	double value;
 
+	/* this library thinks with 1msec resolution */
+	if (pad < 0.001)
+		pad = 0.001;
 	/* TODO: can we skip this test? */
 	if (interval >= 3600*1.5) {
 		long gmtoff;
